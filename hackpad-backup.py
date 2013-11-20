@@ -4,6 +4,7 @@ import urllib
 import json
 import time
 import re
+import sys
 
 import requests
 from requests_oauthlib import OAuth1Session
@@ -46,7 +47,13 @@ class Hackpad:
 
     def _get(self, url):
         print url
-        r = self.hackpad.get(url)
+        for i in range(5):
+            r = self.hackpad.get(url)
+            if r.status_code not in (200, 401):
+                print 'status_code', r.status_code
+                time.sleep(2)
+                continue
+            break
 
         # for debug
         with file('tmp.txt', 'w') as f:
@@ -75,8 +82,14 @@ class Hackpad:
     def list_revisions(self, padid):
         url = self.base + '/api/1.0/pad/%s/revisions' % padid
         r = self._get(url)
-        o = json.loads(r.text)
+        try:
+            o = json.loads(r.text)
+        except ValueError:
+            print r.text
+            raise
         if 'success' in o and not o['success']:
+            if o['error'] == 'Not found':
+                return []  # workaround
             raise HackpadException, o['error']
         return o
 
@@ -230,7 +243,7 @@ def backup_site(site):
             '''sample:
             {u'endRev': 215, u'authorPics': [u'https://graph.facebook.com/1234567/picture?type=square'], u'timestamp': 1375949266.528, u'startRev': 160, u'authors': [u'John Doe'], u'emails': []}
             '''
-            
+
             # ignore old changes
             # NOTE, endRev=0 means just created and has not been modified yet
             if last_version >= rev['endRev']:
