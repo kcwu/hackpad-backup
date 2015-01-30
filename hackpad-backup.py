@@ -18,6 +18,8 @@ g_out_of_order_commit = False
 
 api_keys = {}
 
+re_site = '^[\w-]+$'
+
 class HackpadException(Exception):
     pass
 
@@ -50,7 +52,7 @@ class Hackpad:
         for i in range(5):
             r = self.hackpad.get(url)
             if r.status_code not in (200, 401):
-                print 'status_code', r.status_code
+                print 'status_code:', r.status_code, ', content:', r.content
                 time.sleep(2)
                 continue
             break
@@ -77,6 +79,8 @@ class Hackpad:
         o = json.loads(r.text)
         if 'success' in o and not o['success']:
             raise HackpadException, o['error']
+        if len(o) == 1000:
+            raise HackpadException, 'too many pads edited'
         return o
 
     def list_revisions(self, padid):
@@ -88,7 +92,7 @@ class Hackpad:
             print r.text
             raise
         if 'success' in o and not o['success']:
-            if o['error'] == 'Not found':
+            if o['error'] == 'Not found':  # maybe real "Not found", maybe no access right
                 return []  # workaround
             raise HackpadException, o['error']
         return o
@@ -106,7 +110,7 @@ class Storage:
         self.site = site
         self.data = []
 
-        assert re.match(r'^\w+$', site)
+        assert re.match(re_site, site)
         self.base = 'data/%s' % (site or 'main')
         if not os.path.exists(self.base):
             os.makedirs(self.base)
@@ -116,16 +120,16 @@ class Storage:
             subprocess.check_call(cmd, shell=True)
 
     def verify_padid(self, padid):
-        if not re.match(r'^[\w%.-]+$', padid):
+        if not re.match(r'^[\w%.~-]+$', padid):
             raise ValueError
 
     def _get_store_filename(self, padid):
+        # check for security
         self.verify_padid(padid)
         assert not re.match(r'^\.', padid)
         return '%s.%s' % (padid, g_format)
 
     def _get_store_path(self, padid):
-        # check for security
         path = os.path.join(self.base, self._get_store_filename(padid))
         return path
 
@@ -142,7 +146,7 @@ class Storage:
             if not os.path.exists(path):
                 return None
 
-            cmd = 'cd %s && git log -n 1 --pretty="format:%%B" "%s"' % (self.base, self._get_store_filename(padid))
+            cmd = 'cd %s && git log -n 1 --pretty="format:%%B" -- "%s"' % (self.base, self._get_store_filename(padid))
             print cmd
             output = subprocess.check_output(cmd, shell=True)
         return output
@@ -153,7 +157,8 @@ class Storage:
             return 0
         print repr(log)
         m = re.search('^timestamp (\d+(?:\.\d+)?)$', log, re.M)
-        assert m
+        if not m:
+            return 0
         return float(m.group(1))
 
     def get_version(self, padid):
@@ -181,7 +186,7 @@ class Storage:
 
 
         fn = self._get_store_filename(padid)
-        cmd = 'cd %s && git add "%s" && git commit --date="%s" -a -F -' % (
+        cmd = 'cd %s && git add -- "%s" && git commit --date="%s" -a -F -' % (
                 self.base, fn, datestr)
         print cmd
         print msg.encode('utf8')
@@ -232,7 +237,8 @@ def backup_site(site):
 
     for padid in padids:
         print padid
-        if re.match(r'^[.-]', padid):
+
+        if re.match(r'^[.]', padid):
             print >> sys.stderr, "I don't like this padid: %s" % padid
             continue
 
@@ -270,7 +276,7 @@ def run_backup():
             continue
         print 'line', line
         site, item = line.split('/')
-        assert re.match(r'^\w+$', site)
+        assert re.match(re_site, site)
 
         if item != '*':
             raise NotImplementedError
