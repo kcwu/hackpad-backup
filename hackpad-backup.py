@@ -4,8 +4,47 @@ import json
 import time
 import re
 import sys
+import logging
+import logging.config
 
 from requests_oauthlib import OAuth1Session
+
+logging.config.dictConfig({
+            'version': 1,
+            'disable_existing_loggers': False,
+            'formatters': {
+                'verbose': {
+                    'format': '%(asctime)s %(module)s %(process)d %(levelname)s %(message)s'
+                    },
+                'simple': {
+                    'format': '%(asctime)s %(levelname)s %(message)s'
+                    },
+                },
+            'handlers': {
+                'console': {
+                    'level': 'INFO',
+                    'class': 'logging.StreamHandler',
+                    'formatter': 'simple',
+                },
+                'file-log': {
+                    'level': 'DEBUG',
+                    'class': 'logging.handlers.TimedRotatingFileHandler',
+                    'formatter': 'verbose',
+                    'filename': 'hackpad_backup.log',
+                    'when': 'd',
+                    'backupCount': 2,
+                    },
+                },
+            'loggers': {
+                'hackpad_backup': {
+                    'handlers': ['file-log', 'console'],
+                    'level': 'DEBUG',
+                    'propagate': False,
+                    },
+                },
+            })
+
+logger = logging.getLogger('hackpad_backup')
 
 g_format = 'html'
 g_timezone = '+0800'
@@ -47,13 +86,14 @@ class Hackpad:
         self.hackpad = OAuth1Session(*api_keys[site])
 
     def _get(self, url):
-        print url
+        logger.debug('Retrieving from: %s' % url)
         for i in range(g_retry_count):
             r = self.hackpad.get(url)
             if r.status_code not in (200, 401):
-                print 'status_code:', r.status_code, ', content:', r.content
+                logger.warning('status_code: %d (%s)' % (r.status_code, r.reason))
+                logger.debug('content: ' + r.content)
                 s = 2 ** min(6, i)
-                print 'sleep %d to retry %d/%d' % (s, i + 1, g_retry_count)
+                logger.debug('sleep %d to retry %d/%d' % (s, i + 1, g_retry_count))
                 time.sleep(s)
                 continue
             break
@@ -64,14 +104,13 @@ class Hackpad:
 
         return r
 
-    def get_pad_content(self, padid, format='html', revision=None):
+    def get_pad_content(self, padid, file_format='html', revision=None):
         if revision:
-            url = self.base + '/api/1.0/pad/%s/content/%s.%s' % (padid, revision, format)
+            url = self.base + '/api/1.0/pad/%s/content/%s.%s' % (padid, revision, file_format)
         else:
-            url = self.base + '/api/1.0/pad/%s/content.%s' % (padid, format)
+            url = self.base + '/api/1.0/pad/%s/content.%s' % (padid, file_format)
 
         r = self._get(url)
-        print r.content
         return r.content
 
     def list_updated_pads(self, timestamp):
@@ -90,7 +129,7 @@ class Hackpad:
         try:
             o = json.loads(r.text)
         except ValueError:
-            print r.text
+            logger.exception('bad padid=%s' % padid)
             raise
         if 'success' in o and not o['success']:
             if o['error'] == 'Not found':  # maybe real "Not found", maybe no access right
@@ -137,7 +176,7 @@ class Storage:
     def _git_log(self, padid=None):
         if padid is None:
             cmd = 'cd %s && git log -n 1 --pretty="format:%%B"' % (self.base)
-            print cmd
+            logger.debug('Initializing command: %s' % cmd)
             try:
                 output = subprocess.check_output(cmd, shell=True)
             except subprocess.CalledProcessError:
@@ -148,7 +187,7 @@ class Storage:
                 return None
 
             cmd = 'cd %s && git log -n 1 --pretty="format:%%B" -- "%s"' % (self.base, self._get_store_filename(padid))
-            print cmd
+            logger.debug('Initializing command: %s' % cmd)
             output = subprocess.check_output(cmd, shell=True)
         return output
 
@@ -156,7 +195,7 @@ class Storage:
         log = self._git_log()
         if log is None:
             return 0
-        print repr(log)
+        logger.debug(repr(log))
         m = re.search('^timestamp (\d+(?:\.\d+)?)$', log, re.M)
         if not m:
             return 0
@@ -180,19 +219,22 @@ class Storage:
         if os.path.exists(path):
             old_content = file(path).read()
             if old_content == content:
+                logger.debug('No new content in hackpad')
                 return
 
         with open(path, 'w') as f:
             f.write(content)
 
-
         fn = self._get_store_filename(padid)
         cmd = 'cd %s && git add -- "%s" && git commit --date="%s" -a -F -' % (
                 self.base, fn, datestr)
-        print cmd
-        print msg.encode('utf8')
-        p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE)
+        logger.debug('Commiting with command "%s"' % cmd)
+        logger.debug('Message with the commit: %s' % msg.encode('utf8'))
+        p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = p.communicate(msg.encode('utf8'))
+        if p.returncode != 0:
+            logger.critical('stdout=%s' % repr(stdout))
+            logger.critical('stderr=%s' % repr(stderr))
         assert p.returncode == 0
 
 
@@ -236,14 +278,16 @@ def backup_site(site):
     for padid in padids:
         storage.verify_padid(padid)
 
-    for padid in padids:
-        print padid
+    logger.info('%d pads to go' % len(padids))
+    for i, padid in enumerate(padids):
+        logger.info('Backup site="%s" %d/%d: padid="%s"' % (site, i, len(padids), padid))
 
         if re.match(r'^[.]', padid):
-            print >> sys.stderr, "I don't like this padid: %s" % padid
+            logger.error("I don't like this padid: '%s', skip" % padid)
             continue
 
         last_version = storage.get_version(padid)
+        logger.debug('Latest version of this pad: %s' % last_version)
 
         for rev in hackpad.list_revisions(padid):
             del rev['htmlDiff']
@@ -259,9 +303,7 @@ def backup_site(site):
             if rev['timestamp'] > now - 60:
                 continue
 
-            print rev
-
-            content = hackpad.get_pad_content(padid, format=g_format, revision=rev['endRev'])
+            content = hackpad.get_pad_content(padid, file_format=g_format, revision=rev['endRev'])
 
             storage.add(rev['timestamp'], rev, padid, content)
             time.sleep(g_delay)
@@ -275,7 +317,7 @@ def run_backup():
         line = re.sub('#.*', '', line).strip()
         if not line:
             continue
-        print 'line', line
+        logger.info('Backup: %s' % line)
         site, item = line.split('/')
         assert re.match(re_site, site)
 
