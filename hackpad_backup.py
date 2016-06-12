@@ -173,9 +173,9 @@ class Storage:
         path = os.path.join(self.base, self._get_store_filename(padid))
         return path
 
-    def _git_log(self, padid=None):
+    def _git_log(self, padid=None, n=1):
         if padid is None:
-            cmd = 'cd %s && git log -n 1 --pretty="format:%%B"' % (self.base)
+            cmd = 'cd %s && git log -n %d --pretty="format:%%B"' % (self.base, n)
             logger.debug('Initializing command: %s' % cmd)
             try:
                 output = subprocess.check_output(cmd, shell=True)
@@ -186,13 +186,14 @@ class Storage:
             if not os.path.exists(path):
                 return None
 
-            cmd = 'cd %s && git log -n 1 --pretty="format:%%B" -- "%s"' % (self.base, self._get_store_filename(padid))
+            cmd = 'cd %s && git log -n %d --pretty="format:%%B" -- "%s"' % (self.base, n, self._get_store_filename(padid))
             logger.debug('Initializing command: %s' % cmd)
             output = subprocess.check_output(cmd, shell=True)
         return output
 
     def get_last_backup_time(self):
-        log = self._git_log()
+        # n=10: dirty hack to skip other commits, say, pads.json
+        log = self._git_log(n=10)
         if log is None:
             return 0
         logger.debug(repr(log))
@@ -213,8 +214,8 @@ class Storage:
     def add(self, t, rev, padid, content):
         self.data.append((t, rev, padid, content))
 
-    def _git_commit(self, padid, datestr, msg, content):
-        path = self._get_store_path(padid)
+    def _git_commit_file(self, fn, datestr, msg, content):
+        path = os.path.join(self.base, fn)
 
         if os.path.exists(path):
             old_content = file(path).read()
@@ -225,7 +226,6 @@ class Storage:
         with open(path, 'w') as f:
             f.write(content)
 
-        fn = self._get_store_filename(padid)
         cmd = 'cd %s && git add -- "%s" && git commit --date="%s" -a -F -' % (
                 self.base, fn, datestr)
         logger.debug('Commiting with command "%s"' % cmd)
@@ -237,6 +237,9 @@ class Storage:
             logger.critical('stderr=%s' % repr(stderr))
         assert p.returncode == 0
 
+    def _git_commit(self, padid, datestr, msg, content):
+        fn = self._get_store_filename(padid)
+        return self._git_commit_file(fn, datestr, msg, content)
 
     def commit(self):
         # sort by timestamp
@@ -312,14 +315,21 @@ def backup_site(site):
             storage.commit()
     storage.commit()
 
-def run_backup():
+def get_backup_list():
+    result = []
     for line in file('backup_list.txt'):
         line = re.sub('#.*', '', line).strip()
         if not line:
             continue
-        logger.info('Backup: %s' % line)
         site, item = line.split('/')
         assert re.match(re_site, site)
+        result.append((site, item))
+
+    return result
+
+def run_backup():
+    for site, item in get_backup_list():
+        logger.info('Backup: %s/%s' % (site, item))
 
         if item != '*':
             raise NotImplementedError
