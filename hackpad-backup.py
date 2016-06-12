@@ -1,12 +1,10 @@
 import os
 import subprocess
-import urllib
 import json
 import time
 import re
 import sys
 
-import requests
 from requests_oauthlib import OAuth1Session
 
 g_format = 'html'
