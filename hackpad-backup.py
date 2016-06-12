@@ -12,6 +12,7 @@ from requests_oauthlib import OAuth1Session
 g_format = 'html'
 g_timezone = '+0800'
 g_delay = 1
+g_retry_count = 10
 
 # only if you know what it is
 g_out_of_order_commit = False
@@ -49,11 +50,13 @@ class Hackpad:
 
     def _get(self, url):
         print url
-        for i in range(5):
+        for i in range(g_retry_count):
             r = self.hackpad.get(url)
             if r.status_code not in (200, 401):
                 print 'status_code:', r.status_code, ', content:', r.content
-                time.sleep(2)
+                s = 2 ** min(6, i)
+                print 'sleep %d to retry %d/%d' % (s, i + 1, g_retry_count)
+                time.sleep(s)
                 continue
             break
 
