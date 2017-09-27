@@ -1,30 +1,37 @@
-現在 g0v 太多東西放 hackpad, 除了 hackpad 自己的 history 功能, 應該另外作備份
+Update:
+hackpad is shuting down and it provided "export" function to admins. So, if you are admin of
+hackpad sites, it is suggested to use their "export" function, which preserve more information.
 
-# 備份
-如果是 g0v 或是 open source 相關 project, 我可以幫忙 backup. 請聯絡我.
-p.s. 如果是比較大的 site, 請開 admin 給我, 因為 hackpad 要 admin 才能 list uplodated pads
+If you are not admin, you can use this script to backup.
 
-# 設定檔: 
-(可以用 # 表示 comment)
+----------------------
+Besides hackpad's history feature, we should do backup ourselves.
+
+# Backup
+For large side, it's recommended to use admin account to backup because only admin can list recent updated pads.
+
+# Configurations: 
+(use # at line beginning as comment)
 - backup_list.txt 
-  一行一個要備份的項目, 譬如 g0v/*
-  目前不支援不是 * 的
-  不是 admin 也可以, 只是比較沒有效率, 要 loop all pads
+  One backup item per line, for example, "g0v/*" mean entire site of g0v.hackpad.com.
+  Currently, it can only support * and unable to backup only individual pads.
+  It's unnecessary for you account to be an admin of that site. But non-admin is less
+  efficient because the program have to loop all pads. And of course, you cannot see
+  hidden pads if you are not admin or owner.
 - api_keys.txt
-  用來存取 hackpad 的 api key, 一行一個, 格式如
+  The API key of hackpad, one key per line. The format is
   [key] [secret] [site]
 
 # api key
-在 hackpad 網站上的 settings 裡可以找到. 注意每個 domain 的 key 是分開的.
+You can find the api key on hackpad's setting page. Note different domain (site) use different key.
 
-# 使用方法
-設好 backup_list.txt 跟 api_keys.txt, 執行
+# How to use
+After setup backup_list.txt and api_keys.txt, run
   python hackpad-backup.py
-即可
 
-程式會在 data/[site] 目錄建立 git repository, 以 padid.html 為檔名 commit 到 git 去.
+The script will create git repository in data/[site] folder. And commit files named as padid.html into the git repo.
 
 # feature & limitation
-- 會備份部份歷史版本 versions, 不過不會備份所有版本, 不然太大了
-- 若整個 pad 被刪掉, 備份程式不會知道, 也不會備份刪掉前的版畚
-- 預設以 html 格式備份, 因為這格式能保留比較多資訊
+- It can backup history of pads. But only partial, not full revisions, otherwise the size is too huge.
+- The backup script is unable to know what pads are deleted and thus unable to backup the last revisions before delete.
+- It backups in html format by default because this format can preserve more information.
