@@ -15,7 +15,7 @@ For large side, it's recommended to use admin account to backup because only adm
 - backup_list.txt 
   One backup item per line, for example, "g0v/*" mean entire site of g0v.hackpad.com.
   Currently, it can only support * and unable to backup only individual pads.
-  It's unnecessary for you account to be an admin of that site. But non-admin is less
+  It's unnecessary for your account to be an admin of that site. But non-admin is less
   efficient because the program have to loop all pads. And of course, you cannot see
   hidden pads if you are not admin or owner.
 - api_keys.txt
